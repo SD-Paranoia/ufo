@@ -35,3 +35,16 @@ func TestServe(t *testing.T) {
 		t.Fatal("content mismatch")
 	}
 }
+
+func TestNotFound(t *testing.T) {
+	const expect = "Hello World\n"
+	srv := testServer(genBasicHandler(expect), Page{"/", http.MethodPost})
+	c := srv.Client()
+	resp, err := c.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 404 {
+		t.Fatal("expected 404")
+	}
+}
