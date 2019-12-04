@@ -72,4 +72,47 @@ func TestRegIn(t *testing.T) {
 	if string(b) != "OK" {
 		t.Fatalf("expected %s got %s", "OK", string(b))
 	}
+
+	resp, err = c.Post(srv.URL, "application/json", bytes.NewBuffer(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 400 {
+		t.Fatal("expected 400 for dup key")
+	}
+
+	resp, err = c.Post(srv.URL, "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 400 {
+		t.Fatal("expected 400 for no body")
+	}
+
+	m.Sig = "chris"
+	b, err = json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = c.Post(srv.URL, "application/json", bytes.NewBuffer(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 400 {
+		t.Fatal("expected 400 for bad sig")
+	}
+
+	m.Public = "chris"
+	m.Sig = Sig(sig)
+	b, err = json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = c.Post(srv.URL, "application/json", bytes.NewBuffer(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 400 {
+		t.Fatal("expected 400 for bad key")
+	}
 }
