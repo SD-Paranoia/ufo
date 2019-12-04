@@ -1,20 +1,18 @@
 package ufo
 
-import "github.com/google/uuid"
-
-/* ASCII Armor endoed values */
+/* ASCII Armor encoded values */
 type (
 	Sig         string
 	FingerPrint string
 )
 
 type SignedFingerPrint struct {
-	Sig
 	FingerPrint
+	SignedChallenge Sig
 }
 
 type Group struct {
-	uuid.UUID
+	UUID    string
 	Members []FingerPrint
 }
 
@@ -28,9 +26,17 @@ type RegisterIn struct {
 	Sig    Sig
 }
 
+type ChallengeIn struct {
+	FingerPrint
+}
+
+type ChallengeOut struct {
+	UUID string
+}
+
 type ReadIn struct {
 	SignedFingerPrint
-	GroupID uuid.UUID
+	GroupID string
 }
 
 type ReadOut struct {
@@ -39,12 +45,8 @@ type ReadOut struct {
 
 type WriteIn struct {
 	SignedFingerPrint
-	Group   uuid.UUID
+	GroupID string
 	Content string
-}
-
-type WriteOut struct {
-	Err string
 }
 
 type ListIn struct {
@@ -52,5 +54,5 @@ type ListIn struct {
 }
 
 type ListOut struct {
-	Groups []string
+	GroupUUIDs []string
 }

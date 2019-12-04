@@ -4,15 +4,34 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
-	"strings"
-
-	"golang.org/x/crypto/openpgp"
 )
 
-var ledger *Ledger
+var (
+	regin    = make(chan RegisterIn)
+	proofin  = make(chan Proof)
+	regout   chan error
+	proofout chan error
+
+	chalin    = make(chan ChallengeIn)
+	verifyin  = make(chan SignedFingerPrint)
+	chalout   chan ChallengeOut
+	verifyout chan error
+
+	rin  = make(chan string)
+	win  = make(chan WriteIn)
+	rout chan ReadOut
+	wout chan error
+
+	groupin  = make(chan Group)
+	listin   = make(chan ListIn)
+	groupout chan error
+	listout  chan ListOut
+)
 
 func init() {
-	ledger = NewLedger()
+	regout, proofout = registerProc(regin, proofin)
+	rout, wout = msgProc(rin, win)
+	groupout, listout = convoProc(groupin, listin)
 }
 
 func RegisterInHandler(w http.ResponseWriter, r *http.Request) {
@@ -27,14 +46,9 @@ func RegisterInHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-	pub, err := ledger.AddKey(in.Public)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	_, err = openpgp.CheckArmoredDetachedSignature(openpgp.EntityList{pub}, strings.NewReader(in.Public), strings.NewReader(string(in.Sig)))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	regin <- in
+	if <-regout != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	w.Write([]byte("OK"))
