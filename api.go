@@ -53,3 +53,25 @@ func RegisterInHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Write([]byte("OK"))
 }
+
+func ChallengeHandler(w http.ResponseWriter, r *http.Request) {
+	var in ChallengeIn
+	b, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	err = json.Unmarshal(b, &in)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	chalin <- in
+	out := <-chalout
+	if out.UUID == "" {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	b, err = json.Marshal(&out)
+	w.Write(b)
+}
