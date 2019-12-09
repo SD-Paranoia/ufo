@@ -56,3 +56,8 @@ type ListIn struct {
 type ListOut struct {
 	GroupUUIDs []string
 }
+
+type GroupIn struct {
+	Group
+	SignedFingerPrint
+}
