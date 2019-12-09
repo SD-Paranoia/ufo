@@ -21,7 +21,7 @@ func MakeHandler() *Handler {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.RLock()
 	defer h.RUnlock()
-	p := Page{path: r.URL.Path, method: r.Method}
+	p := Page{Path: r.URL.Path, Method: r.Method}
 	if h := h.m[p]; h != nil {
 		h(w, r)
 		return
