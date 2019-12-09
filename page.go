@@ -1,9 +1,9 @@
 package ufo
 
 type Page struct {
-	path, method string
+	Path, Method string
 }
 
 func (p *Page) String() string {
-	return "Path:" + p.path + ",method:" + p.method
+	return "Path:" + p.Path + ",method:" + p.Method
 }
