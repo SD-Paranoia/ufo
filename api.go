@@ -24,7 +24,7 @@ var (
 
 	groupin  = make(chan Group)
 	listin   = make(chan ListIn)
-	groupout chan error
+	groupout chan GroupOut
 	listout  chan ListOut
 )
 
@@ -32,6 +32,7 @@ func init() {
 	regout, proofout = registerProc(regin, proofin)
 	rout, wout = msgProc(rin, win)
 	groupout, listout = convoProc(groupin, listin)
+	chalout, verifyout = challengeProc(chalin, verifyin)
 }
 
 func RegisterInHandler(w http.ResponseWriter, r *http.Request) {
@@ -94,5 +95,12 @@ func MakeConvoHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-
+	groupin <- in.Group
+	out := <-groupout
+	b, err = json.Marshal(&out)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	w.Write(b)
 }

@@ -61,3 +61,7 @@ type GroupIn struct {
 	Group
 	SignedFingerPrint
 }
+
+type GroupOut struct {
+	Error, UUID string
+}
