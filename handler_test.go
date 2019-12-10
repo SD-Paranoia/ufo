@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/SD-Paranoia/ufo"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func testServer(hs http.HandlerFunc, p ufo.Page) *httptest.Server {
@@ -23,30 +25,16 @@ func genBasicHandler(s string) http.HandlerFunc {
 
 func TestServe(t *testing.T) {
 	const expect = "Hello World\n"
-	srv := testServer(genBasicHandler(expect), ufo.Page{"/", http.MethodGet})
+	srv := testServer(genBasicHandler(expect), ufo.Page{"/hello", http.MethodGet})
 	c := srv.Client()
-	resp, err := c.Get(srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp, err := c.Get(srv.URL + "/hello")
+	require.Nil(t, err)
 	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != expect {
-		t.Fatal("content mismatch")
-	}
-}
-
-func TestNotFound(t *testing.T) {
-	const expect = "Hello World\n"
-	srv := testServer(genBasicHandler(expect), ufo.Page{"/", http.MethodPost})
-	c := srv.Client()
-	resp, err := c.Get(srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != 404 {
-		t.Fatal("expected 404")
-	}
+	require.Nil(t, err)
+	assert.Equal(t, expect, string(b))
+	t.Run("not found", func(t *testing.T) {
+		resp, err := c.Get(srv.URL)
+		require.Nil(t, err)
+		require.Equal(t, 404, resp.StatusCode)
+	})
 }
