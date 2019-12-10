@@ -17,6 +17,11 @@ var ErrKeyExists = errors.New("Key already exist")
 var ErrAuthDenied = errors.New("Auth denied")
 var ErrKeyNotExist = errors.New("Key doesnt exist")
 
+func MakeFingerPrint(pub string) FingerPrint {
+	f := sha512.Sum512([]byte(pub))
+	return FingerPrint(hex.EncodeToString(f[:]))
+}
+
 func parsePublic(public string) (FingerPrint, *openpgp.Entity, error) {
 	var fp FingerPrint
 	r := strings.NewReader(public)
@@ -28,9 +33,7 @@ func parsePublic(public string) (FingerPrint, *openpgp.Entity, error) {
 	if err != nil {
 		return fp, nil, err
 	}
-	f := sha512.Sum512([]byte(public))
-	fp = FingerPrint(hex.EncodeToString(f[:]))
-	return fp, pubEntity, nil
+	return MakeFingerPrint(public), pubEntity, nil
 }
 
 type Proof struct {
@@ -149,29 +152,26 @@ func msgProc(rin chan string, win chan WriteIn) (chan ReadOut, chan error) {
 
 var ErrGroupExists = errors.New("Group Exists")
 
-func convoProc(makein chan Group, listin chan ListIn) (chan error, chan ListOut) {
+func convoProc(makein chan Group, listin chan ListIn) (chan GroupOut, chan ListOut) {
 	dir := make(map[uuid.UUID][]FingerPrint)
 	bdir := make(map[FingerPrint][]uuid.UUID)
-	makeout := make(chan error)
+	makeout := make(chan GroupOut)
 	listout := make(chan ListOut)
 	go func() {
 		for {
 			select {
 			case msg := <-makein:
-				uuid, err := uuid.Parse(msg.UUID)
-				if err != nil {
-					makeout <- ErrBadUUID
-					continue
-				}
+				uuid := uuid.New()
 				_, ok := dir[uuid]
 				if ok {
-					makeout <- ErrGroupExists
+					makeout <- GroupOut{Error: ErrGroupExists.Error()}
 					continue
 				}
 				dir[uuid] = msg.Members
 				for _, fp := range msg.Members {
 					bdir[fp] = append(bdir[fp], uuid)
 				}
+				makeout <- GroupOut{UUID: uuid.String()}
 			case msg := <-listin:
 				us, ok := bdir[msg.SignedFingerPrint.FingerPrint]
 				if !ok {
