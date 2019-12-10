@@ -1,118 +1,163 @@
-package ufo
+package ufo_test
 
 import (
 	"bytes"
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/SD-Paranoia/ufo"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 )
 
-func genKeyParts(t *testing.T) (string, string) {
+func genKeyParts(t *testing.T) (string, string, *openpgp.Entity) {
+	t.Helper()
 	keyPair, err := openpgp.NewEntity("test", "testing key", "test@chris.com", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a := require.New(t)
+	a.Nil(err)
 
 	for _, id := range keyPair.Identities {
 		err = id.SelfSignature.SignUserId(id.UserId.Id, keyPair.PrimaryKey, keyPair.PrivateKey, nil)
-		if err != nil {
-			log.Fatal(err)
-		}
+		a.Nil(err)
 	}
 
 	pubbuf := &bytes.Buffer{}
 	aw, err := armor.Encode(pubbuf, openpgp.PublicKeyType, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	a.Nil(err)
 	err = keyPair.Serialize(aw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	a.Nil(err)
 	aw.Close()
 	pub := pubbuf.String()
 
 	sigbuf := &bytes.Buffer{}
-	err = openpgp.ArmoredDetachSign(sigbuf, keyPair, strings.NewReader(pub), nil)
-	if err != nil {
-		t.Fatal(err)
+	a.Nil(openpgp.ArmoredDetachSign(sigbuf, keyPair, strings.NewReader(pub), nil))
+	return pub, sigbuf.String(), keyPair
+}
+
+func signFingerPrint(t *testing.T, uuid string, keyPair *openpgp.Entity) ufo.Sig {
+	t.Helper()
+	sigbuf := &bytes.Buffer{}
+	require.Nil(t, openpgp.ArmoredDetachSign(sigbuf, keyPair, strings.NewReader(uuid), nil))
+	return ufo.Sig(sigbuf.String())
+}
+
+func TestChallenge(t *testing.T) {
+	pub, sig, kp := genKeyParts(t)
+
+	//Register ourselves first
+	m := &ufo.RegisterIn{Public: pub, Sig: ufo.Sig(sig)}
+	b, err := json.Marshal(m)
+	require.Nil(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/reg", bytes.NewBuffer(b))
+	w := httptest.NewRecorder()
+	ufo.RegisterInHandler(w, req)
+	require.Nil(t, err)
+	resp := w.Result()
+	assert.Equal(t, 200, resp.StatusCode)
+
+	in := &ufo.ChallengeIn{ufo.MakeFingerPrint(pub)}
+	b, err = json.Marshal(in)
+	require.Nil(t, err)
+	req = httptest.NewRequest(http.MethodPost, "/chal", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.ChallengeHandler(w, req)
+	resp = w.Result()
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var out ufo.ChallengeOut
+	require.Nil(t, json.Unmarshal(b, &out))
+	_, err = uuid.Parse(out.UUID)
+	assert.Nilf(t, err, "Got err %s", out.UUID)
+
+	//Attempt to create a new group with ourself; this might become an error later
+	fp := ufo.MakeFingerPrint(pub)
+	gin := &ufo.GroupIn{
+		Group: ufo.Group{Members: []ufo.FingerPrint{fp}},
+		SignedFingerPrint: ufo.SignedFingerPrint{
+			SignedChallenge: signFingerPrint(t, out.UUID, kp),
+			FingerPrint:     fp,
+		},
 	}
-	return pub, sigbuf.String()
+	b, err = json.Marshal(gin)
+	require.Nil(t, err)
+	req = httptest.NewRequest(http.MethodPost, "/convo", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.MakeConvoHandler(w, req)
+	resp = w.Result()
+	assert.Equal(t, 200, resp.StatusCode)
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	gout := &ufo.GroupOut{}
+	require.Nil(t, json.Unmarshal(b, gout))
+	assert.Empty(t, gout.Error)
+	_, err = uuid.Parse(gout.UUID)
+	assert.Nil(t, err)
+
 }
 
 func TestRegIn(t *testing.T) {
-	pub, sig := genKeyParts(t)
-	m := &RegisterIn{Public: pub, Sig: Sig(sig)}
+	pub, sig, _ := genKeyParts(t)
+	m := &ufo.RegisterIn{Public: pub, Sig: ufo.Sig(sig)}
 	b, err := json.Marshal(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	handl := MakeHandler()
-	handl.Register(RegisterInHandler, Page{"/", http.MethodPost})
-	srv := httptest.NewServer(handl)
-	c := srv.Client()
-	resp, err := c.Post(srv.URL, "application/json", bytes.NewBuffer(b))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.Nil(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/reg", bytes.NewBuffer(b))
+	w := httptest.NewRecorder()
+	ufo.RegisterInHandler(w, req)
+	resp := w.Result()
+
 	b, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != 200 {
-		t.Fatalf("Got %s from server", string(b))
-	}
-	if string(b) != "OK" {
-		t.Fatalf("expected %s got %s", "OK", string(b))
-	}
+	require.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "OK", string(b))
 
-	resp, err = c.Post(srv.URL, "application/json", bytes.NewBuffer(b))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != 400 {
-		t.Fatal("expected 400 for dup key")
-	}
+	t.Run("Duplicate key", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		ufo.RegisterInHandler(w, req)
+		resp := w.Result()
+		assert.Equal(t, 400, resp.StatusCode)
+	})
 
-	resp, err = c.Post(srv.URL, "application/json", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != 400 {
-		t.Fatal("expected 400 for no body")
-	}
+	t.Run("nil body", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/reg", nil)
+		ufo.RegisterInHandler(w, req)
+		resp := w.Result()
+		assert.Equal(t, 400, resp.StatusCode)
+	})
 
-	m.Sig = "chris"
-	b, err = json.Marshal(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, err = c.Post(srv.URL, "application/json", bytes.NewBuffer(b))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != 400 {
-		t.Fatal("expected 400 for bad sig")
-	}
+	t.Run("bad sig", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		m := &ufo.RegisterIn{Public: pub, Sig: ufo.Sig("chris")}
+		b, err = json.Marshal(m)
+		require.Nil(t, err)
+		req := httptest.NewRequest(http.MethodPost, "/reg", bytes.NewBuffer(b))
+		ufo.RegisterInHandler(w, req)
+		resp := w.Result()
+		assert.Equal(t, 400, resp.StatusCode)
+	})
 
-	m.Public = "chris"
-	m.Sig = Sig(sig)
-	b, err = json.Marshal(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, err = c.Post(srv.URL, "application/json", bytes.NewBuffer(b))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != 400 {
-		t.Fatal("expected 400 for bad key")
-	}
+	t.Run("bad key", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		m := &ufo.RegisterIn{Public: "chris", Sig: ufo.Sig(sig)}
+		b, err = json.Marshal(m)
+		require.Nil(t, err)
+		req := httptest.NewRequest(http.MethodPost, "/reg", bytes.NewBuffer(b))
+		ufo.RegisterInHandler(w, req)
+		resp := w.Result()
+		assert.Equal(t, 400, resp.StatusCode)
+	})
 }
