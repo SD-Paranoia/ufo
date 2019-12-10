@@ -48,10 +48,9 @@ func signFingerPrint(t *testing.T, uuid string, keyPair *openpgp.Entity) ufo.Sig
 	return ufo.Sig(sigbuf.String())
 }
 
-func TestChallenge(t *testing.T) {
+func register(t *testing.T) (string, string, *openpgp.Entity) {
+	t.Helper()
 	pub, sig, kp := genKeyParts(t)
-
-	//Register ourselves first
 	m := &ufo.RegisterIn{Public: pub, Sig: ufo.Sig(sig)}
 	b, err := json.Marshal(m)
 	require.Nil(t, err)
@@ -60,15 +59,21 @@ func TestChallenge(t *testing.T) {
 	ufo.RegisterInHandler(w, req)
 	require.Nil(t, err)
 	resp := w.Result()
-	assert.Equal(t, 200, resp.StatusCode)
+	require.Equal(t, 200, resp.StatusCode)
+	b, _ = ioutil.ReadAll(resp.Body)
+	assert.Equal(t, "OK", string(b))
+	return pub, sig, kp
+}
 
+func getChallenge(t *testing.T, pub string) string {
+	t.Helper()
 	in := &ufo.ChallengeIn{ufo.MakeFingerPrint(pub)}
-	b, err = json.Marshal(in)
+	b, err := json.Marshal(in)
 	require.Nil(t, err)
-	req = httptest.NewRequest(http.MethodPost, "/chal", bytes.NewBuffer(b))
-	w = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/chal", bytes.NewBuffer(b))
+	w := httptest.NewRecorder()
 	ufo.ChallengeHandler(w, req)
-	resp = w.Result()
+	resp := w.Result()
 	b, err = ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -77,22 +82,27 @@ func TestChallenge(t *testing.T) {
 	require.Nil(t, json.Unmarshal(b, &out))
 	_, err = uuid.Parse(out.UUID)
 	assert.Nilf(t, err, "Got err %s", out.UUID)
+	return out.UUID
+}
 
+func TestMakeGroup(t *testing.T) {
+	pub, _, kp := register(t)
+	uuids := getChallenge(t, pub)
 	//Attempt to create a new group with ourself; this might become an error later
 	fp := ufo.MakeFingerPrint(pub)
 	gin := &ufo.GroupIn{
 		Group: ufo.Group{Members: []ufo.FingerPrint{fp}},
 		SignedFingerPrint: ufo.SignedFingerPrint{
-			SignedChallenge: signFingerPrint(t, out.UUID, kp),
+			SignedChallenge: signFingerPrint(t, uuids, kp),
 			FingerPrint:     fp,
 		},
 	}
-	b, err = json.Marshal(gin)
+	b, err := json.Marshal(gin)
 	require.Nil(t, err)
-	req = httptest.NewRequest(http.MethodPost, "/convo", bytes.NewBuffer(b))
-	w = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/convo", bytes.NewBuffer(b))
+	w := httptest.NewRecorder()
 	ufo.MakeConvoHandler(w, req)
-	resp = w.Result()
+	resp := w.Result()
 	assert.Equal(t, 200, resp.StatusCode)
 	b, err = ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
