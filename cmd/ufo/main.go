@@ -3,14 +3,17 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/SD-Paranoia/ufo"
 )
 
 func main() {
-	handl := ufo.MakeHandler()
-	handl.Register(ufo.RegisterInHandler, ufo.Page{"/reg", http.MethodPost})
-	handl.Register(ufo.ChallengeHandler, ufo.Page{"/chal", http.MethodPost})
-	handl.Register(ufo.MakeConvoHandler, ufo.Page{"/convo", http.MethodPost})
-	log.Fatal(http.ListenAndServe(":8080", handl))
+	s := &http.Server{
+		Addr:         ":8080",
+		Handler:      http.HandlerFunc(ufo.UFO),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+	log.Fatal(s.ListenAndServe())
 }
