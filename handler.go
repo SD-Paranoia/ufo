@@ -4,6 +4,7 @@ import (
 	"net/http"
 )
 
+//map of request to handler translations, not to be modified during run time
 var reqtrans = map[string]http.HandlerFunc{
 	"/reg":   RegisterInHandler,
 	"/chal":  ChallengeHandler,
