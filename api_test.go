@@ -132,7 +132,7 @@ func TestMakeGroup(t *testing.T) {
 	assert.Equal(t, gout.UUID, lout.GroupUUIDs[0])
 }
 
-func TestRW(t *testing.T){
+func TestRW(t *testing.T) {
 	pub, _, kp := register(t)
 	uuids := getChallenge(t, pub)
 	//Attempt to create a new group with ourself; this might become an error later
@@ -161,8 +161,8 @@ func TestRW(t *testing.T){
 
 	win := &ufo.WriteIn{
 		SignedFingerPrint: gin.SignedFingerPrint,
-		GroupID: gout.UUID,
-		Content: msgContent,
+		GroupID:           gout.UUID,
+		Content:           msgContent,
 	}
 	b, err = json.Marshal(win)
 	req = httptest.NewRequest(http.MethodPost, "/write", bytes.NewBuffer(b))
@@ -176,7 +176,7 @@ func TestRW(t *testing.T){
 
 	rin := &ufo.ReadIn{
 		SignedFingerPrint: win.SignedFingerPrint,
-		GroupID: gout.UUID,
+		GroupID:           gout.UUID,
 	}
 	b, err = json.Marshal(rin)
 	req = httptest.NewRequest(http.MethodPost, "/read", bytes.NewBuffer(b))
