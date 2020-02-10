@@ -1,39 +1,28 @@
 package ufo
 
 import (
-	"log"
 	"net/http"
-	"sync"
 )
 
-type Handler struct {
-	*sync.RWMutex
-	m map[Page]http.HandlerFunc
+//map of request to handler translations, not to be modified during run time
+var reqtrans = map[string]http.HandlerFunc{
+	"/reg":   RegisterInHandler,
+	"/chal":  ChallengeHandler,
+	"/convo": MakeConvoHandler,
+	"/read":  ReadHandler,
+	"/write": WriteHandler,
+	"/list":  ListHandler,
 }
 
-func MakeHandler() *Handler {
-	return &Handler{
-		RWMutex: &sync.RWMutex{},
-		m:       make(map[Page]http.HandlerFunc),
+func UFO(w http.ResponseWriter, r *http.Request) {
+	/* All of our end points are POST only */
+	if r.Method != http.MethodPost {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
 	}
-}
-
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.RLock()
-	defer h.RUnlock()
-	p := Page{Path: r.URL.Path, Method: r.Method}
-	if h := h.m[p]; h != nil {
+	if h, ok := reqtrans[r.URL.Path]; ok {
 		h(w, r)
 		return
 	}
-	http.NotFoundHandler().ServeHTTP(w, r)
-	log.Printf("Unmatched page: %v\n", p)
-}
-
-func (h *Handler) Register(handl http.HandlerFunc, pages ...Page) {
-	h.Lock()
-	for _, p := range pages {
-		h.m[p] = handl
-	}
-	h.Unlock()
+	http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 }

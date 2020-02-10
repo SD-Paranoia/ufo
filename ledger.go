@@ -142,6 +142,7 @@ func msgProc(rin chan string, win chan WriteIn) (chan ReadOut, chan error) {
 					msg.Content,
 				}
 				msgs[uuid] = append(msgs[uuid], newmsg)
+				wout <- nil
 			}
 		}
 	}()

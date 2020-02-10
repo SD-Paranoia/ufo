@@ -48,10 +48,9 @@ func signFingerPrint(t *testing.T, uuid string, keyPair *openpgp.Entity) ufo.Sig
 	return ufo.Sig(sigbuf.String())
 }
 
-func TestChallenge(t *testing.T) {
+func register(t *testing.T) (string, string, *openpgp.Entity) {
+	t.Helper()
 	pub, sig, kp := genKeyParts(t)
-
-	//Register ourselves first
 	m := &ufo.RegisterIn{Public: pub, Sig: ufo.Sig(sig)}
 	b, err := json.Marshal(m)
 	require.Nil(t, err)
@@ -60,15 +59,21 @@ func TestChallenge(t *testing.T) {
 	ufo.RegisterInHandler(w, req)
 	require.Nil(t, err)
 	resp := w.Result()
-	assert.Equal(t, 200, resp.StatusCode)
+	require.Equal(t, 200, resp.StatusCode)
+	b, _ = ioutil.ReadAll(resp.Body)
+	assert.Equal(t, "OK", string(b))
+	return pub, sig, kp
+}
 
+func getChallenge(t *testing.T, pub string) string {
+	t.Helper()
 	in := &ufo.ChallengeIn{ufo.MakeFingerPrint(pub)}
-	b, err = json.Marshal(in)
+	b, err := json.Marshal(in)
 	require.Nil(t, err)
-	req = httptest.NewRequest(http.MethodPost, "/chal", bytes.NewBuffer(b))
-	w = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/chal", bytes.NewBuffer(b))
+	w := httptest.NewRecorder()
 	ufo.ChallengeHandler(w, req)
-	resp = w.Result()
+	resp := w.Result()
 	b, err = ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -77,22 +82,27 @@ func TestChallenge(t *testing.T) {
 	require.Nil(t, json.Unmarshal(b, &out))
 	_, err = uuid.Parse(out.UUID)
 	assert.Nilf(t, err, "Got err %s", out.UUID)
+	return out.UUID
+}
 
+func TestMakeGroup(t *testing.T) {
+	pub, _, kp := register(t)
+	uuids := getChallenge(t, pub)
 	//Attempt to create a new group with ourself; this might become an error later
 	fp := ufo.MakeFingerPrint(pub)
 	gin := &ufo.GroupIn{
 		Group: ufo.Group{Members: []ufo.FingerPrint{fp}},
 		SignedFingerPrint: ufo.SignedFingerPrint{
-			SignedChallenge: signFingerPrint(t, out.UUID, kp),
+			SignedChallenge: signFingerPrint(t, uuids, kp),
 			FingerPrint:     fp,
 		},
 	}
-	b, err = json.Marshal(gin)
+	b, err := json.Marshal(gin)
 	require.Nil(t, err)
-	req = httptest.NewRequest(http.MethodPost, "/convo", bytes.NewBuffer(b))
-	w = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/convo", bytes.NewBuffer(b))
+	w := httptest.NewRecorder()
 	ufo.MakeConvoHandler(w, req)
-	resp = w.Result()
+	resp := w.Result()
 	assert.Equal(t, 200, resp.StatusCode)
 	b, err = ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
@@ -102,6 +112,84 @@ func TestChallenge(t *testing.T) {
 	_, err = uuid.Parse(gout.UUID)
 	assert.Nil(t, err)
 
+	//Make sure out group list now has our newly created UUID
+	//It is possible for our signed fingerprint to expire, but not likely
+	lin := &ufo.ListIn{
+		gin.SignedFingerPrint,
+	}
+	b, err = json.Marshal(lin)
+	require.Nil(t, err)
+	req = httptest.NewRequest(http.MethodPost, "/list", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.ListHandler(w, req)
+	resp = w.Result()
+	assert.Equal(t, 200, resp.StatusCode)
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	lout := &ufo.ListOut{}
+	require.Nil(t, json.Unmarshal(b, lout))
+	assert.Equal(t, 1, len(lout.GroupUUIDs))
+	assert.Equal(t, gout.UUID, lout.GroupUUIDs[0])
+}
+
+func TestRW(t *testing.T) {
+	pub, _, kp := register(t)
+	uuids := getChallenge(t, pub)
+	//Attempt to create a new group with ourself; this might become an error later
+	fp := ufo.MakeFingerPrint(pub)
+	gin := &ufo.GroupIn{
+		Group: ufo.Group{Members: []ufo.FingerPrint{fp}},
+		SignedFingerPrint: ufo.SignedFingerPrint{
+			SignedChallenge: signFingerPrint(t, uuids, kp),
+			FingerPrint:     fp,
+		},
+	}
+	b, err := json.Marshal(gin)
+	require.Nil(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/convo", bytes.NewBuffer(b))
+	w := httptest.NewRecorder()
+	ufo.MakeConvoHandler(w, req)
+	resp := w.Result()
+	assert.Equal(t, 200, resp.StatusCode)
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	gout := &ufo.GroupOut{}
+	require.Nil(t, json.Unmarshal(b, gout))
+	assert.Empty(t, gout.Error)
+
+	const msgContent = "Hello from paranoia land"
+
+	win := &ufo.WriteIn{
+		SignedFingerPrint: gin.SignedFingerPrint,
+		GroupID:           gout.UUID,
+		Content:           msgContent,
+	}
+	b, err = json.Marshal(win)
+	req = httptest.NewRequest(http.MethodPost, "/write", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.WriteHandler(w, req)
+	resp = w.Result()
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "OK", string(b))
+
+	rin := &ufo.ReadIn{
+		SignedFingerPrint: win.SignedFingerPrint,
+		GroupID:           gout.UUID,
+	}
+	b, err = json.Marshal(rin)
+	req = httptest.NewRequest(http.MethodPost, "/read", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.ReadHandler(w, req)
+	resp = w.Result()
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	rout := &ufo.ReadOut{}
+	require.Nil(t, json.Unmarshal(b, rout))
+	assert.Equal(t, 1, len(rout.Msgs))
+	assert.Equal(t, msgContent, rout.Msgs[0].Content)
 }
 
 func TestRegIn(t *testing.T) {
