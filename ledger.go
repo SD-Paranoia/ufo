@@ -16,6 +16,8 @@ import (
 var ErrKeyExists = errors.New("Key already exist")
 var ErrAuthDenied = errors.New("Auth denied")
 var ErrKeyNotExist = errors.New("Key doesnt exist")
+var ErrGroupExists = errors.New("Group Exists")
+var ErrBadUUID = errors.New("bad UUID")
 
 func MakeFingerPrint(pub string) FingerPrint {
 	f := sha512.Sum512([]byte(pub))
@@ -115,8 +117,6 @@ func challengeProc(cin chan ChallengeIn, vin chan SignedFingerPrint) (chan Chall
 	return cout, vout
 }
 
-var ErrBadUUID = errors.New("bad UUID")
-
 func msgProc(rin chan string, win chan WriteIn) (chan ReadOut, chan error) {
 	msgs := make(map[uuid.UUID][]Msg)
 	rout := make(chan ReadOut)
@@ -148,10 +148,7 @@ func msgProc(rin chan string, win chan WriteIn) (chan ReadOut, chan error) {
 	}()
 
 	return rout, wout
-
 }
-
-var ErrGroupExists = errors.New("Group Exists")
 
 func convoProc(makein chan Group, listin chan ListIn) (chan GroupOut, chan ListOut) {
 	dir := make(map[uuid.UUID][]FingerPrint)
