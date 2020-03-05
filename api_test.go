@@ -2,55 +2,58 @@ package ufo_test
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/SD-Paranoia/ufo"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
 )
 
-func genKeyParts(t *testing.T) (string, string, *openpgp.Entity) {
+func genKeyPartsRSA(t *testing.T) (string, string, *rsa.PrivateKey) {
 	t.Helper()
-	keyPair, err := openpgp.NewEntity("test", "testing key", "test@chris.com", nil)
+	key, err := rsa.GenerateKey(rand.Reader, 4096)
 	a := require.New(t)
 	a.Nil(err)
 
-	for _, id := range keyPair.Identities {
-		err = id.SelfSignature.SignUserId(id.UserId.Id, keyPair.PrimaryKey, keyPair.PrivateKey, nil)
-		a.Nil(err)
-	}
-
-	pubbuf := &bytes.Buffer{}
-	aw, err := armor.Encode(pubbuf, openpgp.PublicKeyType, nil)
+	pubStr, err := ufo.EncodePublicRSA(&key.PublicKey)
 	a.Nil(err)
-	err = keyPair.Serialize(aw)
-	a.Nil(err)
-	aw.Close()
-	pub := pubbuf.String()
 
-	sigbuf := &bytes.Buffer{}
-	a.Nil(openpgp.ArmoredDetachSign(sigbuf, keyPair, strings.NewReader(pub), nil))
-	return pub, sigbuf.String(), keyPair
+	hashed := sha256.Sum256([]byte(pubStr))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hashed[:])
+	a.Nil(err)
+
+	sigStr := base64.StdEncoding.EncodeToString(sig)
+	return pubStr, sigStr, key
 }
 
-func signFingerPrint(t *testing.T, uuid string, keyPair *openpgp.Entity) ufo.Sig {
-	t.Helper()
-	sigbuf := &bytes.Buffer{}
-	require.Nil(t, openpgp.ArmoredDetachSign(sigbuf, keyPair, strings.NewReader(uuid), nil))
-	return ufo.Sig(sigbuf.String())
+func makeFingerPrint(pub string) ufo.FingerPrint {
+	hashed := sha256.Sum256([]byte(pub))
+	return ufo.FingerPrint(hex.EncodeToString(hashed[:]))
 }
 
-func register(t *testing.T) (string, string, *openpgp.Entity) {
+func signFingerPrint(t *testing.T, uuid string, key *rsa.PrivateKey) ufo.Sig {
 	t.Helper()
-	pub, sig, kp := genKeyParts(t)
+	hashed := sha256.Sum256([]byte(uuid))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hashed[:])
+	require.Nil(t, err)
+	sigStr := base64.StdEncoding.EncodeToString(sig)
+	return ufo.Sig(sigStr)
+}
+
+func register(t *testing.T) (string, string, *rsa.PrivateKey) {
+	t.Helper()
+	pub, sig, kp := genKeyPartsRSA(t)
 	m := &ufo.RegisterIn{Public: pub, Sig: ufo.Sig(sig)}
 	b, err := json.Marshal(m)
 	require.Nil(t, err)
@@ -67,7 +70,7 @@ func register(t *testing.T) (string, string, *openpgp.Entity) {
 
 func getChallenge(t *testing.T, pub string) string {
 	t.Helper()
-	in := &ufo.ChallengeIn{ufo.MakeFingerPrint(pub)}
+	in := &ufo.ChallengeIn{makeFingerPrint(pub)}
 	b, err := json.Marshal(in)
 	require.Nil(t, err)
 	req := httptest.NewRequest(http.MethodPost, "/chal", bytes.NewBuffer(b))
@@ -89,7 +92,7 @@ func TestMakeGroup(t *testing.T) {
 	pub, _, kp := register(t)
 	uuids := getChallenge(t, pub)
 	//Attempt to create a new group with ourself; this might become an error later
-	fp := ufo.MakeFingerPrint(pub)
+	fp := makeFingerPrint(pub)
 	gin := &ufo.GroupIn{
 		Group: ufo.Group{Members: []ufo.FingerPrint{fp}},
 		SignedFingerPrint: ufo.SignedFingerPrint{
@@ -136,7 +139,7 @@ func TestRW(t *testing.T) {
 	pub, _, kp := register(t)
 	uuids := getChallenge(t, pub)
 	//Attempt to create a new group with ourself; this might become an error later
-	fp := ufo.MakeFingerPrint(pub)
+	fp := makeFingerPrint(pub)
 	gin := &ufo.GroupIn{
 		Group: ufo.Group{Members: []ufo.FingerPrint{fp}},
 		SignedFingerPrint: ufo.SignedFingerPrint{
@@ -193,7 +196,7 @@ func TestRW(t *testing.T) {
 }
 
 func TestRegIn(t *testing.T) {
-	pub, sig, _ := genKeyParts(t)
+	pub, sig, _ := genKeyPartsRSA(t)
 	m := &ufo.RegisterIn{Public: pub, Sig: ufo.Sig(sig)}
 	b, err := json.Marshal(m)
 	require.Nil(t, err)

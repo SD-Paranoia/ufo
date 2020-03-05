@@ -1,16 +1,15 @@
 package ufo
 
 import (
-	"crypto/sha512"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
-	"golang.org/x/crypto/openpgp/packet"
 )
 
 var ErrKeyExists = errors.New("Key already exist")
@@ -19,58 +18,51 @@ var ErrKeyNotExist = errors.New("Key doesnt exist")
 var ErrGroupExists = errors.New("Group Exists")
 var ErrBadUUID = errors.New("bad UUID")
 
-func MakeFingerPrint(pub string) FingerPrint {
-	f := sha512.Sum512([]byte(pub))
-	return FingerPrint(hex.EncodeToString(f[:]))
-}
-
-func parsePublic(public string) (FingerPrint, *openpgp.Entity, error) {
-	var fp FingerPrint
-	r := strings.NewReader(public)
-	block, err := armor.Decode(r)
-	if err != nil {
-		return fp, nil, err
-	}
-	pubEntity, err := openpgp.ReadEntity(packet.NewReader(block.Body))
-	if err != nil {
-		return fp, nil, err
-	}
-	return MakeFingerPrint(public), pubEntity, nil
-}
-
 type Proof struct {
 	SignedFingerPrint
 	UUID string
 }
 
 func registerProc(rin chan RegisterIn, vin chan Proof) (chan error, chan error) {
-	keys := make(map[FingerPrint]*openpgp.Entity)
+	keys := make(map[FingerPrint]*rsa.PublicKey)
 	rout := make(chan error)
 	vout := make(chan error)
 	go func() {
 		for {
 			select {
 			case msg := <-rin:
-				fp, pub, err := parsePublic(msg.Public)
+				pub, err := ParsePublicRSA(msg.Public)
 				if err != nil {
 					rout <- err
 					continue
 				}
+				hashed := sha256.Sum256([]byte(msg.Public))
+				fp := FingerPrint(hex.EncodeToString(hashed[:]))
 				if _, ok := keys[fp]; ok {
 					rout <- ErrKeyExists
 					continue
 				}
 				keys[fp] = pub
-				_, err = openpgp.CheckArmoredDetachedSignature(openpgp.EntityList{pub}, strings.NewReader(msg.Public), strings.NewReader(string(msg.Sig)))
-				rout <- err
+				sig, err := base64.StdEncoding.DecodeString(string(msg.Sig))
+				if err != nil {
+					rout <- err
+					continue
+				}
+
+				rout <- rsa.VerifyPKCS1v15(pub, crypto.SHA256, hashed[:], sig)
 			case msg := <-vin:
 				pub, ok := keys[msg.SignedFingerPrint.FingerPrint]
 				if !ok {
 					vout <- ErrKeyNotExist
 					continue
 				}
-				_, err := openpgp.CheckArmoredDetachedSignature(openpgp.EntityList{pub}, strings.NewReader(msg.UUID), strings.NewReader(string(msg.SignedFingerPrint.SignedChallenge)))
-				vout <- err
+				sig, err := base64.StdEncoding.DecodeString(string(msg.SignedChallenge))
+				if err != nil {
+					vout <- err
+					continue
+				}
+				hashed := sha256.Sum256([]byte(msg.UUID))
+				vout <- rsa.VerifyPKCS1v15(pub, crypto.SHA256, hashed[:], sig)
 			}
 		}
 	}()
@@ -146,7 +138,6 @@ func msgProc(rin chan string, win chan WriteIn) (chan ReadOut, chan error) {
 			}
 		}
 	}()
-
 	return rout, wout
 }
 
