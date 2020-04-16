@@ -7,6 +7,7 @@ import (
 	"errors"
 )
 
+//ParsePublicRSA parses a PKIX PEM encoded RSA key
 func ParsePublicRSA(public string) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode([]byte(public))
 	if block == nil {
@@ -26,17 +27,19 @@ func ParsePublicRSA(public string) (*rsa.PublicKey, error) {
 	}
 }
 
+//EncodePublicRSA key takes a PublicKey struct and
+//encodes it to a PKIX PEM encoded string
 func EncodePublicRSA(pubkey *rsa.PublicKey) (string, error) {
-	pubkey_bytes, err := x509.MarshalPKIXPublicKey(pubkey)
+	pubkeyBytes, err := x509.MarshalPKIXPublicKey(pubkey)
 	if err != nil {
 		return "", err
 	}
-	pubkey_pem := pem.EncodeToMemory(
+	pubkeyPem := pem.EncodeToMemory(
 		&pem.Block{
 			Type:  "RSA PUBLIC KEY",
-			Bytes: pubkey_bytes,
+			Bytes: pubkeyBytes,
 		},
 	)
 
-	return string(pubkey_pem), nil
+	return string(pubkeyPem), nil
 }

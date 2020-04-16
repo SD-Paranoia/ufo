@@ -8,7 +8,7 @@ import (
 
 var (
 	regin    = make(chan RegisterIn)
-	proofin  = make(chan Proof)
+	proofin  = make(chan proof)
 	regout   chan error
 	proofout chan error
 
@@ -35,6 +35,9 @@ func init() {
 	chalout, verifyout = challengeProc(chalin, verifyin)
 }
 
+//RegisterInHandler is the endpoint for registration requests
+//it accepts a marshalled RegisterIn struct and returns
+//a 200 status code on success.
 func RegisterInHandler(w http.ResponseWriter, r *http.Request) {
 	var in RegisterIn
 	b, err := ioutil.ReadAll(r.Body)
@@ -55,6 +58,9 @@ func RegisterInHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
+//ChallengeHandler is the endpoint for challenge requests
+//it accepts a json marshalled ChallengeIn struct and
+//returns a marshalled ChallengeOut on success.
 func ChallengeHandler(w http.ResponseWriter, r *http.Request) {
 	var in ChallengeIn
 	b, err := ioutil.ReadAll(r.Body)
@@ -77,6 +83,9 @@ func ChallengeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+//MakeConvoHandler is the endpoint for creation of
+//conversations, it accepts a json marshalled GroupIn
+//struct and returns a marshalled GroupOut struct on success.
 func MakeConvoHandler(w http.ResponseWriter, r *http.Request) {
 	var in GroupIn
 	b, err := ioutil.ReadAll(r.Body)
@@ -105,6 +114,9 @@ func MakeConvoHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+//ReadHandler is the endpoint for requesting messages from
+//the server. It accepts a marshalled ReadIn struct and
+//returns a marshalled ReadOut struct on success.
 func ReadHandler(w http.ResponseWriter, r *http.Request) {
 	var in ReadIn
 	b, err := ioutil.ReadAll(r.Body)
@@ -133,6 +145,9 @@ func ReadHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+//WriteHandler is the endpoint for writing messages
+//to a group. It accepts a WriteIn struct and returns a
+//200 status code on success with a body of "OK"
 func WriteHandler(w http.ResponseWriter, r *http.Request) {
 	var in WriteIn
 	b, err := ioutil.ReadAll(r.Body)
@@ -160,6 +175,9 @@ func WriteHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
+//ListHandler is the endpoint for users to query what
+//groups they are a part of. It accepts a ListIn struct
+//and returns a ListOut struct.
 func ListHandler(w http.ResponseWriter, r *http.Request) {
 	var in ListIn
 	b, err := ioutil.ReadAll(r.Body)
