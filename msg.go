@@ -12,7 +12,7 @@ type (
 //the authenticity of a user.
 type SignedFingerPrint struct {
 	FingerPrint         //Public key of user they claim to be
-	SignedChallenge Sig //Signature of that key
+	SignedChallenge Sig //Signature of sha256 encoded UUID challenge
 }
 
 //Group represents a group chat, identified by UUID
