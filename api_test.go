@@ -226,6 +226,109 @@ func TestRW(t *testing.T) {
 	assert.Equal(t, msgContent, rout.Msgs[0].Content)
 }
 
+func TestRW2(t *testing.T) {
+	pub1, _, kp1 := register(t)
+	uuids1 := getChallenge(t, pub1)
+	fp1 := makeFingerPrint(pub1)
+	sfp1 := ufo.SignedFingerPrint{
+		SignedChallenge: signFingerPrint(t, uuids1, kp1),
+		FingerPrint:     fp1,
+	}
+
+	pub2, _, kp2 := register(t)
+	uuids2 := getChallenge(t, pub2)
+	fp2 := makeFingerPrint(pub2)
+	sfp2 := ufo.SignedFingerPrint{
+		SignedChallenge: signFingerPrint(t, uuids2, kp2),
+		FingerPrint:     fp2,
+	}
+
+	gin := &ufo.GroupIn{
+		Group:             ufo.Group{Members: []ufo.FingerPrint{fp1, fp2}},
+		SignedFingerPrint: sfp1,
+	}
+	b, err := marshalLog(t, gin)
+	require.Nil(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/convo", bytes.NewBuffer(b))
+	w := httptest.NewRecorder()
+	ufo.MakeConvoHandler(w, req)
+	resp := w.Result()
+	assert.Equal(t, 200, resp.StatusCode)
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	gout := &ufo.GroupOut{}
+	require.Nil(t, unmarshalLog(t, b, gout))
+	assert.Empty(t, gout.Error)
+
+	const msg1 = "Hello!"
+	const msg2 = "Goodbye!"
+
+	win := &ufo.WriteIn{
+		SignedFingerPrint: sfp1,
+		GroupID:           gout.UUID,
+		Content:           msg1,
+	}
+	b, err = marshalLog(t, win)
+	req = httptest.NewRequest(http.MethodPost, "/write", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.WriteHandler(w, req)
+	resp = w.Result()
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "OK", string(b))
+
+	rin := &ufo.ReadIn{
+		SignedFingerPrint: win.SignedFingerPrint,
+		GroupID:           gout.UUID,
+	}
+	b, err = marshalLog(t, rin)
+	req = httptest.NewRequest(http.MethodPost, "/read", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.ReadHandler(w, req)
+	resp = w.Result()
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	rout := &ufo.ReadOut{}
+	require.Nil(t, unmarshalLog(t, b, rout))
+	assert.Equal(t, 1, len(rout.Msgs))
+	assert.Equal(t, msg1, rout.Msgs[0].Content)
+
+	win = &ufo.WriteIn{
+		SignedFingerPrint: sfp2,
+		GroupID:           gout.UUID,
+		Content:           msg2,
+	}
+	b, err = marshalLog(t, win)
+	req = httptest.NewRequest(http.MethodPost, "/write", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.WriteHandler(w, req)
+	resp = w.Result()
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "OK", string(b))
+
+	rin = &ufo.ReadIn{
+		SignedFingerPrint: win.SignedFingerPrint,
+		GroupID:           gout.UUID,
+	}
+	b, err = marshalLog(t, rin)
+	req = httptest.NewRequest(http.MethodPost, "/read", bytes.NewBuffer(b))
+	w = httptest.NewRecorder()
+	ufo.ReadHandler(w, req)
+	resp = w.Result()
+	b, err = ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	rout = &ufo.ReadOut{}
+	require.Nil(t, unmarshalLog(t, b, rout))
+	assert.Equal(t, 2, len(rout.Msgs))
+	assert.Equal(t, msg1, rout.Msgs[0].Content)
+	assert.Equal(t, msg2, rout.Msgs[1].Content)
+}
+
 func TestRegIn(t *testing.T) {
 	pub, sig, _ := genKeyPartsRSA(t)
 	m := &ufo.RegisterIn{Public: pub, Sig: ufo.Sig(sig)}
