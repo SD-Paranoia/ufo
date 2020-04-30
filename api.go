@@ -26,6 +26,8 @@ var (
 	listin   = make(chan ListIn)
 	groupout chan GroupOut
 	listout  chan ListOut
+
+	login = make(chan Event)
 )
 
 func init() {
@@ -33,6 +35,8 @@ func init() {
 	readout, writeout = msgProc(readin, writein)
 	groupout, listout = convoProc(groupin, listin)
 	chalout, verifyout = challengeProc(chalin, verifyin)
+	logger(login)
+	login <- Event{"started", nil}
 }
 
 //RegisterInHandler is the endpoint for registration requests
@@ -42,16 +46,19 @@ func RegisterInHandler(w http.ResponseWriter, r *http.Request) {
 	var in RegisterIn
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		login <- Event{"Reading POST", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	err = json.Unmarshal(b, &in)
 	if err != nil {
+		login <- Event{"Parsing JSON", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	regin <- in
-	if <-regout != nil {
+	if err = <-regout; err != nil {
+		login <- Event{"Registration", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -65,11 +72,13 @@ func ChallengeHandler(w http.ResponseWriter, r *http.Request) {
 	var in ChallengeIn
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		login <- Event{"Reading POST", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	err = json.Unmarshal(b, &in)
 	if err != nil {
+		login <- Event{"Parsing JSON", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -79,7 +88,7 @@ func ChallengeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-	b, err = json.Marshal(&out)
+	b, _ = json.Marshal(&out)
 	w.Write(b)
 }
 
@@ -90,27 +99,26 @@ func MakeConvoHandler(w http.ResponseWriter, r *http.Request) {
 	var in GroupIn
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		login <- Event{"Reading POST", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	err = json.Unmarshal(b, &in)
 	if err != nil {
+		login <- Event{"Parsing JSON", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	verifyin <- in.SignedFingerPrint
 	err = <-verifyout
 	if err != nil {
+		login <- Event{"Verification", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	groupin <- in.Group
 	out := <-groupout
-	b, err = json.Marshal(&out)
-	if err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
-	}
+	b, _ = json.Marshal(&out)
 	w.Write(b)
 }
 
@@ -121,27 +129,31 @@ func ReadHandler(w http.ResponseWriter, r *http.Request) {
 	var in ReadIn
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		login <- Event{"Reading POST", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	err = json.Unmarshal(b, &in)
 	if err != nil {
+		login <- Event{"Parsing JSON", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	verifyin <- in.SignedFingerPrint
 	err = <-verifyout
 	if err != nil {
+		login <- Event{"Verification", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	readin <- in.GroupID
 	out := <-readout
-	b, err = json.Marshal(&out)
-	if err != nil {
+	if out.Err != nil {
+		login <- Event{"Read", out.Err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
+	b, _ = json.Marshal(&out)
 	w.Write(b)
 }
 
@@ -152,23 +164,27 @@ func WriteHandler(w http.ResponseWriter, r *http.Request) {
 	var in WriteIn
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		login <- Event{"Reading POST", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	err = json.Unmarshal(b, &in)
 	if err != nil {
+		login <- Event{"Parsing JSON", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	verifyin <- in.SignedFingerPrint
 	err = <-verifyout
 	if err != nil {
+		login <- Event{"Verification", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	writein <- in
 	out := <-writeout
 	if out != nil {
+		login <- Event{"Write", out}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -182,26 +198,25 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 	var in ListIn
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		login <- Event{"Reading POST", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	err = json.Unmarshal(b, &in)
 	if err != nil {
+		login <- Event{"Parsing JSON", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	verifyin <- in.SignedFingerPrint
 	err = <-verifyout
 	if err != nil {
+		login <- Event{"Verification", err}
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	listin <- in
 	out := <-listout
-	b, err = json.Marshal(&out)
-	if err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
-	}
+	b, _ = json.Marshal(&out)
 	w.Write(b)
 }

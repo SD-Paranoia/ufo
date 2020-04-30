@@ -57,6 +57,7 @@ type ReadIn struct {
 //response for read requests.
 type ReadOut struct {
 	Msgs []Msg
+	Err  error
 }
 
 //WriteIn is the JSON object

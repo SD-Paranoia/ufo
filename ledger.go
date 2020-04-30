@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +32,8 @@ var ErrGroupExists = errors.New("Group Exists")
 //ErrBadUUID is returned when a user
 //sends a malfromed UUID to the server.
 var ErrBadUUID = errors.New("bad UUID")
+
+var NoSuchUUID = errors.New("No such UUID")
 
 type proof struct {
 	SignedFingerPrint
@@ -133,14 +136,18 @@ func msgProc(rin chan string, win chan WriteIn) (chan ReadOut, chan error) {
 			case msg := <-rin:
 				uuid, err := uuid.Parse(msg)
 				if err != nil {
-					rout <- ReadOut{nil}
+					rout <- ReadOut{nil, err}
 					continue
 				}
-				rout <- ReadOut{msgs[uuid]}
+				if out, ok := msgs[uuid]; ok {
+					rout <- ReadOut{out, nil}
+				} else {
+					rout <- ReadOut{nil, NoSuchUUID}
+				}
 			case msg := <-win:
 				uuid, err := uuid.Parse(msg.GroupID)
 				if err != nil {
-					wout <- ErrBadUUID
+					wout <- fmt.Errorf("%w: %s", ErrBadUUID, uuid)
 					continue
 				}
 				newmsg := Msg{
