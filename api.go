@@ -17,7 +17,7 @@ var (
 	chalout   chan ChallengeOut
 	verifyout chan error
 
-	readin   = make(chan string)
+	readin   = make(chan ReadIn)
 	writein  = make(chan WriteIn)
 	readout  chan ReadOut
 	writeout chan error
@@ -146,7 +146,7 @@ func ReadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-	readin <- in.GroupID
+	readin <- in
 	out := <-readout
 	if out.Err != nil {
 		login <- Event{"Read", out.Err}

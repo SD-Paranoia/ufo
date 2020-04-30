@@ -95,3 +95,11 @@ type GroupIn struct {
 type GroupOut struct {
 	Error, UUID string
 }
+
+//Reciept is a mark in to the message
+//array for a conversation such that we
+//only send new "unread" messages
+type Reciept struct {
+	User FingerPrint
+	Room string
+}

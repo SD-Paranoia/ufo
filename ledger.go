@@ -33,7 +33,7 @@ var ErrGroupExists = errors.New("Group Exists")
 //sends a malfromed UUID to the server.
 var ErrBadUUID = errors.New("bad UUID")
 
-var NoSuchUUID = errors.New("No such UUID")
+var ErrNoSuchUUID = errors.New("No such UUID")
 
 type proof struct {
 	SignedFingerPrint
@@ -126,24 +126,45 @@ func challengeProc(cin chan ChallengeIn, vin chan SignedFingerPrint) (chan Chall
 	return cout, vout
 }
 
-func msgProc(rin chan string, win chan WriteIn) (chan ReadOut, chan error) {
+func msgProc(rin chan ReadIn, win chan WriteIn) (chan ReadOut, chan error) {
 	msgs := make(map[uuid.UUID][]Msg)
+	roll := make(map[Reciept]int)
 	rout := make(chan ReadOut)
 	wout := make(chan error)
 	go func() {
 		for {
 			select {
 			case msg := <-rin:
-				uuid, err := uuid.Parse(msg)
+				uuid, err := uuid.Parse(msg.GroupID)
 				if err != nil {
 					rout <- ReadOut{nil, err}
 					continue
 				}
+				var outgoing []Msg
 				if out, ok := msgs[uuid]; ok {
-					rout <- ReadOut{out, nil}
+					outgoing = out
 				} else {
-					rout <- ReadOut{nil, NoSuchUUID}
+					rout <- ReadOut{nil, ErrNoSuchUUID}
+					continue
 				}
+				recp := Reciept{
+					msg.SignedFingerPrint.FingerPrint,
+					msg.GroupID,
+				}
+				var index int
+				if i, ok := roll[recp]; ok {
+					index = i
+				} else {
+					//User has never done a read
+					index = 0
+				}
+				if index >= len(outgoing) {
+					rout <- ReadOut{[]Msg{}, nil}
+					continue
+				}
+				roll[recp] = len(outgoing)
+				outgoing = outgoing[index:]
+				rout <- ReadOut{outgoing, nil}
 			case msg := <-win:
 				uuid, err := uuid.Parse(msg.GroupID)
 				if err != nil {
